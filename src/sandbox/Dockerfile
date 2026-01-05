@@ -1,7 +1,7 @@
 # Minimal sandbox for incident-aware-agents experiment
 #
 # Build:
-#   docker build -t incident-aware-sandbox:latest -f src/sandbox/Dockerfile .
+#   docker build -t incident-sandbox -f src/sandbox/Dockerfile .
 #
 # The container provides:
 #   - Basic shell utilities

@@ -32,7 +32,7 @@ from typing import Literal
 # Configuration
 # -----------------------------------------------------------------------------
 
-DEFAULT_IMAGE = "incident-aware-sandbox:latest"
+DEFAULT_IMAGE = "incident-sandbox"
 DEFAULT_TIMEOUT = 30  # seconds
 DEFAULT_MEMORY = "256m"
 DEFAULT_CPUS = "0.5"

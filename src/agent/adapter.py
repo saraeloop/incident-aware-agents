@@ -14,9 +14,33 @@ Usage:
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 from noesis.adapters import LangGraphAdapter
+from noesis.runtime.events import governance_event
+
+def _emit_governance_events(result: Any, *, run_dir: Path, episode_id: str) -> None:
+    if not isinstance(result, dict):
+        return
+    payloads: list[dict[str, Any]] = []
+    wrapped = result.get("result")
+    if isinstance(wrapped, dict):
+        items = wrapped.get("results")
+        if isinstance(items, list):
+            for item in items:
+                if isinstance(item, dict):
+                    payload = item.get("governance")
+                    if isinstance(payload, dict):
+                        payloads.append(payload)
+    for payload in payloads:
+        agent = payload.get("policy_id") or "policy.governance.inline"
+        governance_event(
+            run_dir=run_dir,
+            episode_id=episode_id,
+            payload=payload,
+            agent=str(agent),
+        )
 
 if TYPE_CHECKING:
     from src.agent.graph import PlanActAgent
@@ -25,6 +49,26 @@ if TYPE_CHECKING:
 # -----------------------------------------------------------------------------
 # Adapter Factory
 # -----------------------------------------------------------------------------
+
+class GovernedLangGraphAdapter(LangGraphAdapter):
+    def execute(
+        self,
+        *,
+        task: str,
+        episode_id: str,
+        run_dir: Any,
+        intuition: Any | None = None,
+        seed: int = 0,
+        tags: dict[str, Any] | None = None,
+    ) -> Any:
+        _ = (intuition, seed, tags)
+        result = self.invoke(task)
+        try:
+            _emit_governance_events(result, run_dir=Path(run_dir), episode_id=episode_id)
+        except Exception:
+            pass
+        return result
+
 
 def build_adapter(
     agent: "PlanActAgent",
@@ -55,7 +99,7 @@ def build_adapter(
         def input_mapper(task: str) -> dict[str, Any]:
             return {"task": task}
 
-    return LangGraphAdapter(app, input_mapper=input_mapper)
+    return GovernedLangGraphAdapter(app, input_mapper=input_mapper)
 
 
 def create_adapter(model: str | None = None) -> LangGraphAdapter:

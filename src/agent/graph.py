@@ -26,6 +26,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from langgraph.graph import StateGraph
+import noesis as ns
+from noesis.domain.faculties.governance import (
+    GovernanceFailurePolicy,
+    with_governance_context,
+)
+from noesis.domain.state.models import PlanKind, PlanStep
+from noesis.governance import GovernanceDecision, GovernanceMode, PreActGovernor
 
 from src.sandbox.executor import execute_in_sandbox
 
@@ -121,6 +128,37 @@ Safe destination for moves: /quarantine
 
     def __init__(self, llm: LLMClient | None = None):
         self.llm = llm or LLMClient()
+        self._governor = PreActGovernor()
+
+    def _governance_mode(self) -> GovernanceMode:
+        try:
+            mode_raw = ns.get().get("governance_mode", GovernanceMode.OFF.value)
+            return GovernanceMode(str(mode_raw))
+        except Exception:
+            return GovernanceMode.OFF
+
+    def _evaluate_governance(self, task: str, command: str) -> dict[str, Any] | None:
+        mode = self._governance_mode()
+        if mode == GovernanceMode.OFF:
+            return None
+
+        steps = [PlanStep(id="cmd-1", kind=PlanKind.ACT, description=command)]
+        result = self._governor.evaluate(goal=task, plan=steps)
+        failure_raw = ns.get().get("governance_failure_policy")
+        failure_policy = None
+        if isinstance(failure_raw, str):
+            try:
+                failure_policy = GovernanceFailurePolicy(failure_raw)
+            except ValueError:
+                failure_policy = None
+        enforced = mode == GovernanceMode.ENFORCE and result.decision == GovernanceDecision.VETO
+        result = with_governance_context(
+            result,
+            mode=mode,
+            failure_policy=failure_policy,
+            enforced=enforced,
+        )
+        return result.to_mapping()
     
     def plan(self, task: str) -> PlanOutput:
         """Generate shell commands for a task."""
@@ -141,23 +179,40 @@ Safe destination for moves: /quarantine
                 risk_notes=[str(e)],
             )
     
-    def act(self, commands: list[str]) -> dict[str, Any]:
+    def act(self, task: str, commands: list[str]) -> dict[str, Any]:
         """Execute commands in sandbox."""
         results: list[dict[str, Any]] = []
-        
+
         for cmd in commands:
             if cmd.startswith("#"):
                 # Skip comments
                 results.append({"cmd": cmd, "status": "skipped"})
                 continue
-            
+
             try:
+                gov = self._evaluate_governance(task, cmd)
+                if gov is not None:
+                    if (
+                        gov.get("decision") == GovernanceDecision.VETO.value
+                        and gov.get("mode") == GovernanceMode.ENFORCE.value
+                        and gov.get("enforced") is True
+                    ):
+                        results.append({
+                            "cmd": cmd,
+                            "status": "vetoed",
+                            "governance": gov,
+                        })
+                        continue
+
                 output = execute_in_sandbox(cmd)
-                results.append({
+                entry = {
                     "cmd": cmd,
                     "status": "ok",
                     "output": output[:500],  # Truncate
-                })
+                }
+                if gov is not None:
+                    entry["governance"] = gov
+                results.append(entry)
             except Exception as e:
                 results.append({
                     "cmd": cmd,
@@ -191,14 +246,16 @@ def build_graph(agent: PlanActAgent) -> Any:
         task = state.get("task", "")
         plan = agent.plan(task)
         return {
+            "task": task,
             "commands": plan.commands,
             "reasoning": plan.reasoning,
             "risk_notes": plan.risk_notes,
         }
     
     def act_node(state: dict[str, Any]) -> dict[str, Any]:
+        task = state.get("task", "")
         commands = state.get("commands", [])
-        result = agent.act(commands)
+        result = agent.act(task, commands)
         return {"result": result}
     
     graph.add_node("plan", plan_node)
