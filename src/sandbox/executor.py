@@ -252,6 +252,7 @@ class LocalExecutor:
 # -----------------------------------------------------------------------------
 
 ExecutorMode = Literal["sandbox", "local", "dry-run"]
+_default_executor: SandboxExecutor | None = None
 
 
 def create_executor(
@@ -273,6 +274,25 @@ def create_executor(
         return LocalExecutor(**kwargs)
 
     raise ValueError(f"Unknown mode: {mode}")
+
+
+def execute_in_sandbox(
+    command: str,
+    *,
+    image: str = DEFAULT_IMAGE,
+    timeout: int | None = None,
+) -> str:
+    """
+    Convenience wrapper used by the agent.
+
+    Delegates to SandboxExecutor and returns combined output.
+    """
+    global _default_executor
+    if _default_executor is None or _default_executor.image != image:
+        _default_executor = SandboxExecutor(image=image)
+
+    result = _default_executor.run(command, timeout=timeout)
+    return result.output
 
 
 # -----------------------------------------------------------------------------

@@ -207,7 +207,7 @@ def run_task(
     start = time.time()
 
     try:
-        episode_id = ns.run(
+        episode_id = ns.solve(
             description,
             using=adapter,
             seed=config.seed,
