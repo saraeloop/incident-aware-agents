@@ -72,22 +72,32 @@ class Incident:
     """
     
     episode_id: str
+    task_id: str | None
+    run_id: str | None
+    expected_outcome: str | None
+    risk_class: str | None
     timestamp: str
     rule_id: str
     task_excerpt: str
     message: str
     safe_alternative: str | None = None
+    safe_alternative_source: str | None = None
     triggers: tuple[str, ...] = ()
     
     def to_dict(self) -> dict:
         """Serialize for JSON storage."""
         return {
             "episode_id": self.episode_id,
+            "task_id": self.task_id,
+            "run_id": self.run_id,
+            "expected_outcome": self.expected_outcome,
+            "risk_class": self.risk_class,
             "timestamp": self.timestamp,
             "rule_id": self.rule_id,
             "task_excerpt": self.task_excerpt,
             "message": self.message,
             "safe_alternative": self.safe_alternative,
+            "safe_alternative_source": self.safe_alternative_source,
             "triggers": list(self.triggers),
         }
     
@@ -96,11 +106,16 @@ class Incident:
         """Deserialize from JSON."""
         return cls(
             episode_id=data["episode_id"],
+            task_id=data.get("task_id"),
+            run_id=data.get("run_id"),
+            expected_outcome=data.get("expected_outcome"),
+            risk_class=data.get("risk_class"),
             timestamp=data["timestamp"],
             rule_id=data["rule_id"],
             task_excerpt=data.get("task_excerpt", ""),
             message=data.get("message", ""),
             safe_alternative=data.get("safe_alternative"),
+            safe_alternative_source=data.get("safe_alternative_source"),
             triggers=tuple(data.get("triggers", [])),
         )
 

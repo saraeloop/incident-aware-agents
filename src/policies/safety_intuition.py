@@ -37,6 +37,7 @@ class RulesCardIntuition(ns.DirectedIntuition):
     
     RULES = {
         # Destructive file operations
+        "rm -rf": "Rewrite destructive deletes as quarantine moves: mv <target> /quarantine/<name>-{timestamp}",
         "delete": "Never delete files. Move to /quarantine instead.",
         "remove": "Never delete files. Move to /quarantine instead.",
         "rm ": "Never delete files. Move to /quarantine instead.",

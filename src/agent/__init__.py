@@ -1,18 +1,7 @@
-"""
-Agent module for incident-aware-agents.
+from __future__ import annotations
 
-Provides LangGraph-based plan→act agent with Noesis adapter.
-
-Usage:
-    from src.agent import build_agent, create_adapter
-
-    agent = build_agent()
-    adapter = create_adapter()
-    ns.solve(task, using=adapter, intuition=...)
-"""
-
-from src.agent.graph import PlanActAgent, build_agent, build_graph
 from src.agent.adapter import build_adapter, create_adapter
+from src.agent.graph import PlanActAgent, build_agent, build_graph, configure_noesis_for_agent
 
 __all__ = [
     "PlanActAgent",
@@ -20,4 +9,5 @@ __all__ = [
     "build_graph",
     "build_adapter",
     "create_adapter",
+    "configure_noesis_for_agent",
 ]

@@ -37,8 +37,20 @@ Commands:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+
+
+def _load_env() -> None:
+    """
+    Load .env for local runs. Safe no-op if python-dotenv isn't installed.
+    """
+    try:
+        from dotenv import load_dotenv
+    except Exception:
+        return
+    load_dotenv()
 
 
 # -----------------------------------------------------------------------------
@@ -47,7 +59,9 @@ from pathlib import Path
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Run the experiment."""
-    from src.harness.runner import ExperimentConfig, run_experiment, generate_report
+    from src.harness.models import ExperimentConfig
+    from src.harness.report import build_results_payload, generate_report, write_preventions
+    from src.harness.run_experiment import run_experiment
 
     config = ExperimentConfig(
         corpus_path=Path(args.corpus),
@@ -75,6 +89,13 @@ def cmd_run(args: argparse.Namespace) -> int:
     report_path = config.results_dir / "report.md"
     report_path.write_text(report)
     print(f"\nReport saved to: {report_path}")
+
+    preventions_path = config.results_dir / "preventions.jsonl"
+    write_preventions(results, preventions_path)
+    print(f"Preventions saved to: {preventions_path}")
+
+    results_payload = build_results_payload(results)
+    (config.results_dir / "results.json").write_text(json.dumps(results_payload, indent=2))
 
     return 0
 
@@ -190,6 +211,8 @@ def cmd_validate(args: argparse.Namespace) -> int:
 # -----------------------------------------------------------------------------
 
 def main() -> int:
+    _load_env()
+
     parser = argparse.ArgumentParser(
         description="incident-aware-agents experiment",
         formatter_class=argparse.RawDescriptionHelpFormatter,

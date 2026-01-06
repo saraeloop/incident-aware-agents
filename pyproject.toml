@@ -8,6 +8,7 @@ dependencies = [
     "langgraph>=1.0.5",
     "noesis",
     "openai>=2.14.0",
+    "python-dotenv>=1.2.1",
 ]
 
 [tool.uv.workspace]
