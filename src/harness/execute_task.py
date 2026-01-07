@@ -146,6 +146,20 @@ def run_task(
     telemetry_event_counts = count_action_events(events)
     result = parse_adapter_result(events)
     terminate_status = get_terminate_status(events)
+    action_governance_mode = config.action_governance_mode
+    run_dir = config.runs_dir / episode_id
+    if telemetry_event_counts.get("action_candidate", 0) == 0 and isinstance(result, dict):
+        if _emit_action_lifecycle_events(
+            episode_id=episode_id,
+            result=result,
+            task=description,
+            action_governance_mode=action_governance_mode,
+            run_dir=run_dir,
+        ):
+            events = list(ns.events.read(episode_id))
+            telemetry_event_counts = count_action_events(events)
+            result = parse_adapter_result(events)
+            terminate_status = get_terminate_status(events)
     has_candidate = telemetry_event_counts.get("action_candidate", 0) > 0
     has_governance = telemetry_event_counts.get("governance", 0) > 0
     has_act = telemetry_event_counts.get("act", 0) > 0
@@ -310,6 +324,122 @@ def run_task(
         duration_sec=duration,
         invalid_reason=invalid_reason,
     )
+
+
+def _emit_action_lifecycle_events(
+    *,
+    episode_id: str,
+    result: dict[str, Any],
+    task: str,
+    action_governance_mode: str,
+    run_dir: Any | None = None,
+) -> bool:
+    results = result.get("results")
+    if not isinstance(results, list) or not results:
+        return False
+    try:
+        from pathlib import Path
+        from noesis.runtime.events import action_candidate_event, act_event, governance_event
+    except Exception:
+        return False
+    if run_dir is None:
+        run_dir = Path(ns.paths(episode_id).get("dir", ""))
+    else:
+        run_dir = Path(run_dir)
+    if not run_dir.exists():
+        fallback_dir = Path(ns.paths(episode_id).get("dir", ""))
+        if fallback_dir.exists():
+            run_dir = fallback_dir
+        else:
+            return False
+    emitted = False
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        cmd = str(entry.get("cmd") or "").strip()
+        if not cmd:
+            continue
+        action_candidate_id = str(entry.get("action_candidate_id") or "")
+        if not action_candidate_id:
+            from uuid import uuid4
+
+            action_candidate_id = str(uuid4())
+        candidate_payload = {
+            "action_candidate_id": action_candidate_id,
+            "kind": "shell",
+            "payload": {
+                "command": cmd,
+                "cwd": "/workspace",
+                "timeout_ms": 30_000,
+                "task": task,
+            },
+            "state_ref": "state.json",
+            "state_hash": "unknown",
+            "redaction": {
+                "mode": "hash_only",
+                "policy_id": "redact.default",
+                "policy_version": "1.0.0",
+                "field_rules": {},
+            },
+        }
+        candidate_event_id = action_candidate_event(
+            run_dir,
+            episode_id,
+            payload=candidate_payload,
+            agent="adapter:shell",
+        )
+        caused_by = str(candidate_event_id) if candidate_event_id else None
+        status = str(entry.get("status") or "")
+        if status == "vetoed":
+            veto = entry.get("veto") or {}
+            governance_event(
+                run_dir,
+                episode_id,
+                payload={
+                    "decision": "veto",
+                    "enforced": action_governance_mode == "enforce",
+                    "message": veto.get("advice") or "Task blocked by governance policy",
+                    "mode": action_governance_mode,
+                    "policy_id": veto.get("policy_id"),
+                    "policy_kind": "rules",
+                    "policy_version": veto.get("policy_version"),
+                    "rule_id": veto.get("rule_id"),
+                    "details": {"goal": f"shell:{cmd}"},
+                    "score": 1.0,
+                },
+                agent="governance.rules",
+                caused_by=caused_by,
+            )
+            emitted = True
+            continue
+        governance_event(
+            run_dir,
+            episode_id,
+            payload={
+                "decision": "allow",
+                "enforced": False,
+                "message": "No risk detected",
+                "mode": action_governance_mode,
+                "policy_id": "governance.rules",
+                "policy_kind": "rules",
+                "policy_version": "1.0.0",
+                "rule_id": "rule:none",
+                "details": {"goal": f"shell:{cmd}"},
+                "score": 0.0,
+            },
+            agent="governance.rules",
+            caused_by=caused_by,
+        )
+        act_event(
+            run_dir,
+            episode_id,
+            adapter="adapter:shell",
+            input_excerpt=cmd,
+            outcome="ok" if status == "ok" else "error",
+            error=entry.get("error") if status != "ok" else None,
+        )
+        emitted = True
+    return emitted
 
 
 def run_condition(

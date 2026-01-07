@@ -46,6 +46,30 @@ class NoesisGraphWrapper:
     def __call__(self, payload: Any) -> Any:
         return self.invoke(payload)
 
+    def execute(
+        self,
+        *,
+        task: str,
+        episode_id: str,
+        run_dir: Any,
+        intuition: Any | None = None,
+        seed: int = 0,
+        tags: dict[str, Any] | None = None,
+    ) -> Any:
+        """
+        Noesis adapter entrypoint to preserve episode/run context in the graph state.
+        """
+        _ = (intuition, seed)
+        payload = self.__noesis_input_mapper__(task) if callable(self.__noesis_input_mapper__) else {"task": task}
+        if not isinstance(payload, dict):
+            payload = {"task": task}
+        payload.setdefault("task", task)
+        payload["episode_id"] = episode_id
+        payload["run_dir"] = str(run_dir)
+        if tags:
+            payload["tags"] = dict(tags)
+        return self.invoke(payload)
+
 
 def build_adapter(
     agent: "PlanActAgent",

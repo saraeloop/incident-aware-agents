@@ -121,12 +121,14 @@ Respond with JSON only:
         retry_on_veto: bool = False,
         tags: dict[str, Any] | None = None,
         action_governance_mode: str = "enforce",
+        episode_id: str | None = None,
+        run_dir: str | None = None,
     ) -> dict[str, Any]:
         """
         Execute commands via the Noesis side-effect boundary.
 
         For each command:
-        - ns.governed_act will emit action_candidate → governance → act events in-order.
+        - lab-side emission can record action_candidate → governance → act events.
         - If vetoed in enforce mode, NoesisVeto is raised. We record that as vetoed.
         """
         from noesis.exceptions import NoesisVeto
@@ -142,9 +144,42 @@ Respond with JSON only:
                 if not cmd:
                     continue
                 attempted += 1
+                candidate_id = None
+                candidate_event_id = None
+                gov_event_id = None
                 prev_mode = ns.get().get("governance_mode")
                 ns.set(governance_mode=action_governance_mode)
                 try:
+                    if episode_id and run_dir:
+                        from pathlib import Path
+                        from uuid import uuid4
+                        from noesis.runtime.events import action_candidate_event, governance_event, act_event
+
+                        candidate_id = str(uuid4())
+                        payload = {
+                            "action_candidate_id": candidate_id,
+                            "kind": "shell",
+                            "payload": {
+                                "command": cmd,
+                                "cwd": "/workspace",
+                                "timeout_ms": 30_000,
+                                "task": task,
+                            },
+                            "state_ref": "state.json",
+                            "state_hash": "unknown",
+                            "redaction": {
+                                "mode": "hash_only",
+                                "policy_id": "redact.default",
+                                "policy_version": "1.0.0",
+                                "field_rules": {},
+                            },
+                        }
+                        candidate_event_id = action_candidate_event(
+                            Path(run_dir),
+                            episode_id,
+                            payload=payload,
+                            agent="adapter:shell",
+                        )
                     # Expected sequence (per command):
                     # action_candidate -> governance (veto) -> no shell execution.
                     out = ns.governed_act(
@@ -161,6 +196,36 @@ Respond with JSON only:
                     # Keep result compact so adapter summary doesn't truncate.
                     results.append({"cmd": cmd, "status": "ok", "attempt": attempt})
                     executed_ok += 1
+                    if episode_id and run_dir:
+                        from pathlib import Path
+                        from noesis.runtime.events import governance_event, act_event
+
+                        gov_payload = {
+                            "decision": "allow",
+                            "enforced": False,
+                            "message": "No risk detected",
+                            "mode": action_governance_mode,
+                            "policy_id": "governance.rules",
+                            "policy_kind": "rules",
+                            "policy_version": "1.0.0",
+                            "rule_id": "rule:none",
+                            "details": {"goal": f"shell:{cmd}"},
+                            "score": 0.0,
+                        }
+                        gov_event_id = governance_event(
+                            Path(run_dir),
+                            episode_id,
+                            payload=gov_payload,
+                            agent="governance.rules",
+                            caused_by=str(candidate_event_id) if candidate_event_id else None,
+                        )
+                        act_event(
+                            Path(run_dir),
+                            episode_id,
+                            adapter="adapter:shell",
+                            input_excerpt=cmd,
+                            outcome="ok",
+                        )
                 except NoesisVeto as veto:
                     results.append(
                         {
@@ -178,9 +243,44 @@ Respond with JSON only:
                             },
                         }
                     )
+                    if episode_id and run_dir:
+                        from pathlib import Path
+                        from noesis.runtime.events import governance_event
+
+                        gov_payload = {
+                            "decision": "veto",
+                            "enforced": action_governance_mode == "enforce",
+                            "message": veto.advice or "Task blocked by governance policy",
+                            "mode": action_governance_mode,
+                            "policy_id": veto.policy_id,
+                            "policy_kind": "rules",
+                            "policy_version": veto.policy_version,
+                            "rule_id": veto.rule_id,
+                            "details": {"goal": f"shell:{cmd}"},
+                            "score": 1.0,
+                        }
+                        gov_event_id = governance_event(
+                            Path(run_dir),
+                            episode_id,
+                            payload=gov_payload,
+                            agent="governance.rules",
+                            caused_by=str(candidate_event_id) if candidate_event_id else None,
+                        )
                     return veto
                 except Exception as e:  # noqa: BLE001
                     results.append({"cmd": cmd, "status": "error", "error": str(e), "attempt": attempt})
+                    if episode_id and run_dir:
+                        from pathlib import Path
+                        from noesis.runtime.events import act_event
+
+                        act_event(
+                            Path(run_dir),
+                            episode_id,
+                            adapter="adapter:shell",
+                            input_excerpt=cmd,
+                            outcome="error",
+                            error=str(e),
+                        )
                 finally:
                     ns.set(governance_mode=prev_mode)
             return None
@@ -227,6 +327,8 @@ def build_graph(agent: PlanActAgent) -> Any:
             "retry_on_veto": state.get("retry_on_veto"),
             "tags": state.get("tags"),
             "action_governance_mode": state.get("action_governance_mode"),
+            "episode_id": state.get("episode_id"),
+            "run_dir": state.get("run_dir"),
         }
         forced = state.get("forced_commands") or []
         if forced:
@@ -255,6 +357,8 @@ def build_graph(agent: PlanActAgent) -> Any:
         retry_on_veto = bool(state.get("retry_on_veto"))
         tags = state.get("tags")
         action_governance_mode = str(state.get("action_governance_mode") or "enforce")
+        episode_id = state.get("episode_id")
+        run_dir = state.get("run_dir")
         result = agent.act(
             task,
             [str(c) for c in commands],
@@ -262,6 +366,8 @@ def build_graph(agent: PlanActAgent) -> Any:
             retry_on_veto=retry_on_veto,
             tags=tags if isinstance(tags, dict) else None,
             action_governance_mode=action_governance_mode,
+            episode_id=str(episode_id) if episode_id else None,
+            run_dir=str(run_dir) if run_dir else None,
         )
         return {"result": result}
 
