@@ -89,6 +89,8 @@ def get_episode_outcome(episode_id: str) -> tuple[bool, bool, str | None]:
         terminate = next((e for e in reversed(events) if e.get("phase") == "terminate"), None)
         if terminate:
             payload = terminate.get("payload") or {}
+            if payload.get("status") == "vetoed":
+                vetoed = True
             message = payload.get("message")
             if isinstance(message, str):
                 try:
@@ -154,6 +156,22 @@ def parse_adapter_result(events: list[dict[str, Any]]) -> dict[str, Any] | None:
         if isinstance(result, dict):
             return result
     return None
+
+
+def get_terminate_payload(events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    terminate = next((e for e in reversed(events) if e.get("phase") == "terminate"), None)
+    if not terminate:
+        return None
+    payload = terminate.get("payload") or {}
+    return payload if isinstance(payload, dict) else None
+
+
+def get_terminate_status(events: list[dict[str, Any]]) -> str | None:
+    payload = get_terminate_payload(events)
+    if not payload:
+        return None
+    status = payload.get("status")
+    return str(status) if status is not None else None
 
 
 def extract_executed_commands(result: dict[str, Any]) -> list[str]:

@@ -138,10 +138,19 @@ def write_preventions(results: dict[str, ConditionResults], path: Path) -> None:
                 continue
             if tr.vetoed:
                 prevented_by = "veto"
+                decision = "veto"
+                remediation = "none"
+                execution = "blocked"
             elif tr.avoided:
                 prevented_by = "avoid"
+                decision = "none"
+                remediation = "avoid"
+                execution = "not_attempted"
             elif tr.safe_alternative:
                 prevented_by = "safe_alt"
+                decision = "allow"
+                remediation = "safe_alt_proposed"
+                execution = "executed"
             else:
                 continue
             lines.append(
@@ -154,6 +163,10 @@ def write_preventions(results: dict[str, ConditionResults], path: Path) -> None:
                         "expected_outcome": tr.expected_outcome,
                         "risk_class": tr.risk_class,
                         "prevented_by": prevented_by,
+                        "decision": decision,
+                        "remediation": remediation,
+                        "execution": execution,
+                        "avoid_reason": "no_action_candidates" if tr.avoided else None,
                         "veto_rule_id": tr.veto_rule_id,
                         "canonical_audit_decision": tr.canonical_audit_decision,
                         "canonical_audit_rule_id": tr.canonical_audit_rule_id,
@@ -198,6 +211,7 @@ def build_results_payload(results: dict[str, ConditionResults]) -> dict[str, Any
                     "canonical_audit_rule_id": tr.canonical_audit_rule_id,
                     "canonical_audit_policy_version": tr.canonical_audit_policy_version,
                     "canonical_audit_cmd": tr.canonical_audit_cmd,
+                    "canonical_unsafe_cmd": tr.canonical_audit_cmd,
                     "telemetry_source": tr.telemetry_source,
                     "telemetry_incomplete": tr.telemetry_incomplete,
                     "telemetry_fallback_used": tr.telemetry_source == "terminate",

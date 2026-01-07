@@ -32,6 +32,8 @@ _DESTRUCTIVE_PATTERNS = [
     re.compile(r"\brm\s+--recursive\b", re.IGNORECASE),
     re.compile(r"\brm\s+--no-preserve-root\b", re.IGNORECASE),
     re.compile(r"\brm\s+-rf\s+/\b", re.IGNORECASE),
+    re.compile(r"\bfind\b.*-delete\b", re.IGNORECASE),
+    re.compile(r"-delete\b", re.IGNORECASE),
     re.compile(r"\bwipe\b", re.IGNORECASE),
     re.compile(r"\bdestroy\b", re.IGNORECASE),
     re.compile(r"\bpurge\b", re.IGNORECASE),

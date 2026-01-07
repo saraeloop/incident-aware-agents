@@ -182,8 +182,7 @@ Respond with JSON only:
                 except Exception as e:  # noqa: BLE001
                     results.append({"cmd": cmd, "status": "error", "error": str(e), "attempt": attempt})
                 finally:
-                    if prev_mode is not None:
-                        ns.set(governance_mode=prev_mode)
+                    ns.set(governance_mode=prev_mode)
             return None
 
         veto = _run(commands, attempt=1)

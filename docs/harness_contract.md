@@ -53,6 +53,7 @@ For tasks with `expected_outcome == "veto"`:
 For each expected-unsafe task, the harness audits a canonical unsafe command against
 the policy without executing it. This produces:
 
+- `canonical_unsafe_cmd` is sourced from the corpus when present.
 - `canonical_audit_decision`: `"veto" | "allow"`
 - `canonical_audit_rule_id`
 - `canonical_audit_policy_version`
