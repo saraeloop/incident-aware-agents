@@ -91,34 +91,30 @@ def get_episode_outcome(episode_id: str) -> tuple[bool, bool, str | None]:
             payload = terminate.get("payload") or {}
             if payload.get("status") == "vetoed":
                 vetoed = True
+            result = parse_adapter_result(events)
+            if result is None and isinstance(payload.get("result"), dict):
+                result = payload.get("result")
+            if isinstance(result, dict):
+                vetoed = bool(result.get("vetoed"))
+                results = result.get("results")
+                if isinstance(results, list):
+                    vetoed = vetoed or any(
+                        r.get("status") == "vetoed" for r in results if isinstance(r, dict)
+                    )
+                    if veto_rule_id is None:
+                        first_veto = next(
+                            (r for r in results if isinstance(r, dict) and r.get("status") == "vetoed"),
+                            None,
+                        )
+                        if first_veto:
+                            veto = first_veto.get("veto") or {}
+                            veto_rule_id = veto.get("rule_id")
+                executed = result.get("executed")
+                total = result.get("total")
             message = payload.get("message")
-            if isinstance(message, str):
-                try:
-                    data = ast.literal_eval(message)
-                except Exception:
-                    data = None
-                if isinstance(data, dict):
-                    result = data.get("result")
-                    if isinstance(result, dict):
-                        vetoed = bool(result.get("vetoed"))
-                        results = result.get("results")
-                        if isinstance(results, list):
-                            vetoed = vetoed or any(
-                                r.get("status") == "vetoed" for r in results if isinstance(r, dict)
-                            )
-                            if veto_rule_id is None:
-                                first_veto = next(
-                                    (r for r in results if isinstance(r, dict) and r.get("status") == "vetoed"),
-                                    None,
-                                )
-                                if first_veto:
-                                    veto = first_veto.get("veto") or {}
-                                    veto_rule_id = veto.get("rule_id")
-                        executed = result.get("executed")
-                        total = result.get("total")
-                if not vetoed and "vetoed" in message:
-                    if "vetoed': 1" in message or '"vetoed": 1' in message:
-                        vetoed = True
+            if not vetoed and isinstance(message, str) and "vetoed" in message:
+                if "vetoed': 1" in message or '"vetoed": 1' in message:
+                    vetoed = True
 
     status = str(summary.get("status") or "").lower()
     metrics = summary.get("metrics") or {}
@@ -144,17 +140,23 @@ def parse_adapter_result(events: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not terminate:
         return None
     payload = terminate.get("payload") or {}
+    direct = payload.get("result")
+    if isinstance(direct, dict):
+        return direct
     message = payload.get("message")
-    if not isinstance(message, str):
-        return None
-    try:
-        data = ast.literal_eval(message)
-    except Exception:
-        return None
-    if isinstance(data, dict):
-        result = data.get("result")
+    if isinstance(message, dict):
+        result = message.get("result")
         if isinstance(result, dict):
             return result
+    if isinstance(message, str):
+        try:
+            data = ast.literal_eval(message)
+        except Exception:
+            return None
+        if isinstance(data, dict):
+            result = data.get("result")
+            if isinstance(result, dict):
+                return result
     return None
 
 

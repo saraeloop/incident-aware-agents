@@ -146,40 +146,15 @@ Respond with JSON only:
                 attempted += 1
                 candidate_id = None
                 candidate_event_id = None
-                gov_event_id = None
                 prev_mode = ns.get().get("governance_mode")
-                ns.set(governance_mode=action_governance_mode)
+                prev_intuition_mode = ns.get().get("intuition_mode")
+                ns.set(
+                    governance_mode=action_governance_mode,
+                    intuition_mode=prev_intuition_mode or "advisory",
+                )
                 try:
-                    if episode_id and run_dir:
-                        from pathlib import Path
-                        from uuid import uuid4
-                        from noesis.runtime.events import action_candidate_event, governance_event, act_event
-
-                        candidate_id = str(uuid4())
-                        payload = {
-                            "action_candidate_id": candidate_id,
-                            "kind": "shell",
-                            "payload": {
-                                "command": cmd,
-                                "cwd": "/workspace",
-                                "timeout_ms": 30_000,
-                                "task": task,
-                            },
-                            "state_ref": "state.json",
-                            "state_hash": "unknown",
-                            "redaction": {
-                                "mode": "hash_only",
-                                "policy_id": "redact.default",
-                                "policy_version": "1.0.0",
-                                "field_rules": {},
-                            },
-                        }
-                        candidate_event_id = action_candidate_event(
-                            Path(run_dir),
-                            episode_id,
-                            payload=payload,
-                            agent="adapter:shell",
-                        )
+                    # NOTE: Do not emit Noesis events from the adapter. Governance
+                    # should be recorded by ns.governed_act at the action boundary.
                     # Expected sequence (per command):
                     # action_candidate -> governance (veto) -> no shell execution.
                     out = ns.governed_act(
@@ -196,36 +171,6 @@ Respond with JSON only:
                     # Keep result compact so adapter summary doesn't truncate.
                     results.append({"cmd": cmd, "status": "ok", "attempt": attempt})
                     executed_ok += 1
-                    if episode_id and run_dir:
-                        from pathlib import Path
-                        from noesis.runtime.events import governance_event, act_event
-
-                        gov_payload = {
-                            "decision": "allow",
-                            "enforced": False,
-                            "message": "No risk detected",
-                            "mode": action_governance_mode,
-                            "policy_id": "governance.rules",
-                            "policy_kind": "rules",
-                            "policy_version": "1.0.0",
-                            "rule_id": "rule:none",
-                            "details": {"goal": f"shell:{cmd}"},
-                            "score": 0.0,
-                        }
-                        gov_event_id = governance_event(
-                            Path(run_dir),
-                            episode_id,
-                            payload=gov_payload,
-                            agent="governance.rules",
-                            caused_by=str(candidate_event_id) if candidate_event_id else None,
-                        )
-                        act_event(
-                            Path(run_dir),
-                            episode_id,
-                            adapter="adapter:shell",
-                            input_excerpt=cmd,
-                            outcome="ok",
-                        )
                 except NoesisVeto as veto:
                     results.append(
                         {
@@ -243,46 +188,14 @@ Respond with JSON only:
                             },
                         }
                     )
-                    if episode_id and run_dir:
-                        from pathlib import Path
-                        from noesis.runtime.events import governance_event
-
-                        gov_payload = {
-                            "decision": "veto",
-                            "enforced": action_governance_mode == "enforce",
-                            "message": veto.advice or "Task blocked by governance policy",
-                            "mode": action_governance_mode,
-                            "policy_id": veto.policy_id,
-                            "policy_kind": "rules",
-                            "policy_version": veto.policy_version,
-                            "rule_id": veto.rule_id,
-                            "details": {"goal": f"shell:{cmd}"},
-                            "score": 1.0,
-                        }
-                        gov_event_id = governance_event(
-                            Path(run_dir),
-                            episode_id,
-                            payload=gov_payload,
-                            agent="governance.rules",
-                            caused_by=str(candidate_event_id) if candidate_event_id else None,
-                        )
                     return veto
                 except Exception as e:  # noqa: BLE001
                     results.append({"cmd": cmd, "status": "error", "error": str(e), "attempt": attempt})
-                    if episode_id and run_dir:
-                        from pathlib import Path
-                        from noesis.runtime.events import act_event
-
-                        act_event(
-                            Path(run_dir),
-                            episode_id,
-                            adapter="adapter:shell",
-                            input_excerpt=cmd,
-                            outcome="error",
-                            error=str(e),
-                        )
                 finally:
-                    ns.set(governance_mode=prev_mode)
+                    ns.set(
+                        governance_mode=prev_mode,
+                        intuition_mode=prev_intuition_mode or "advisory",
+                    )
             return None
 
         veto = _run(commands, attempt=1)

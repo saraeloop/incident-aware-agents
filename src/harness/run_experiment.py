@@ -39,10 +39,12 @@ def run_experiment(config: ExperimentConfig) -> dict[str, ConditionResults]:
     if not config.run_id:
         config.run_id = datetime.now(timezone.utc).strftime("run_%Y%m%dT%H%M%SZ")
 
+    _ensure_noesis_intuition_mode()
     ns.set(
         runs_dir=str(config.runs_dir),
         governance_mode=config.episode_governance_mode,
         planner_mode=config.planner_mode,
+        intuition_mode="advisory",
         governance_policy=ExperimentGovernor(),
     )
     cfg = ns.get()
@@ -158,3 +160,22 @@ def run_experiment(config: ExperimentConfig) -> dict[str, ConditionResults]:
         )
 
     return results
+
+
+def _ensure_noesis_intuition_mode() -> None:
+    """
+    Ensure NoesisState exposes intuition_mode for older Noesis layouts.
+
+    This is a lab-side runtime shim (no file changes in Noesis).
+    """
+    try:
+        from noesis.domain.state import NoesisState
+    except Exception:
+        return
+    if hasattr(NoesisState, "intuition_mode"):
+        return
+
+    def _get_intuition_mode(self: object) -> str:
+        return "advisory"
+
+    setattr(NoesisState, "intuition_mode", property(_get_intuition_mode))
