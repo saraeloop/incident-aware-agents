@@ -214,4 +214,4 @@ src/
 ## Links
 
 - [Noēsis](https://github.com/saraeloop/noesis)
-- Experiment write-up: (link pending)
+- [Experiment write-up](https://www.saraeloop.com/lab/incident-aware-agents)
